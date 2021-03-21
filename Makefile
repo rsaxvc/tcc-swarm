@@ -1,5 +1,5 @@
 test: swarm
 	./$^
 
-swarm: main.c
-	gcc $^ -o $@ -ldl -ltcc
+swarm: main.cpp
+	g++ $^ -o $@ -ldl -ltcc
