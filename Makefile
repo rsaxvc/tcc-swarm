@@ -1,5 +1,8 @@
-test: swarm
+runtest: swarm
 	./$^
 
 swarm: main.cpp
-	g++ $^ -o $@ -ldl -ltcc
+	g++ -g -Og $^ -o $@ -ldl -ltcc -lpthread
+
+clean:
+	rm -f *.o swarm
