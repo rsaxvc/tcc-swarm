@@ -1,3 +1,4 @@
+#define MULTITHREAD 1
 #include <condition_variable>
 #include <cstdio>
 #include <functional>
@@ -6,44 +7,66 @@
 #include <thread>
 #include <vector>
 #include <libtcc.h>
+#include <iostream>
 
 static std::mutex Queue_Mutex;
 static std::mutex threadpool_mutex;
 static std::mutex stderr_mutex;
+static std::mutex pathcache_mutex;
 static std::condition_variable condition;
 static std::queue<std::function<void()> > Queue;
 static bool terminate_pool;
 
-void error_func( void * opaque, const char * msg )
+struct job
+	{
+	std::string input;
+	std::string output;
+    std::vector<const char *> inc;
+	};
+
+void error_func( void * filename, const char * msg )
 {
 std::unique_lock<std::mutex> lock(stderr_mutex);
-fprintf( stderr, "%s\n", msg );
+fprintf( stderr, "%s:%s\n", filename, msg );
 }
 
-static int compile_unit( const char * input, const char * output, std::vector<const char*> & inc )
+static int compile_unit( job * j )
 {
+    int err = 0;
     TCCState* s = tcc_new();
     if(!s){
         printf("Can’t create a TCC context\n");
-        return 1;
+        err = -__LINE__;
+        goto fail;
     }
 
-    tcc_set_error_func(s, NULL, error_func);
+    tcc_set_error_func(s, (void*)j->input.c_str(), error_func);
 
     tcc_set_output_type(s, TCC_OUTPUT_OBJ);
 
-    if( tcc_add_file(s, input) <0) {
+    for( unsigned i = 0; i < j->inc.size(); ++i ) {
+        if( tcc_add_include_path(s, j->inc[i]) <0 ) {
+            err = -__LINE__;
+            goto fail;
+        }
+    }
+
+    if( tcc_add_file(s, j->input.c_str()) <0) {
         printf("error adding file\n");
-        return 2;
+        err = -__LINE__;
+        goto fail;
     }
 
-    if( tcc_output_file(s, output) < 0 ) {
+    if( tcc_output_file(s, j->output.c_str()) < 0 ) {
         printf("outputfile error\n");
-        return 3;
+        err = -__LINE__;
+        goto fail;
     }
 
+fail:
     tcc_delete(s);
-    return 0;
+    delete( j );
+    return err;
 }
 
 static void Infinite_loop_function()
@@ -76,7 +99,7 @@ std::unique_lock<std::mutex> lock(Queue_Mutex);
 return !Queue.empty();
 }
 
-int main(int argc, char **argv)
+int main(int argc, const char *argv[])
 {
     int Num_Threads = std::thread::hardware_concurrency();
     std::vector<std::thread> Pool;
@@ -86,17 +109,25 @@ int main(int argc, char **argv)
 
     std::vector<const char *> includes;
 
-#if 1
-    Add_Job(std::bind(&compile_unit, "test/main.c", "test/main.o", includes));
-    Add_Job(std::bind(&compile_unit, "test/funcA.c", "test/funcA.o", includes));
-    Add_Job(std::bind(&compile_unit, "test/funcB.c", "test/funcB.o", includes));
-    Add_Job(std::bind(&compile_unit, "test/funcC.c", "test/funcC.o", includes));
-#else
-    compile_unit("test/main.c","test/main.o", includes);
-    compile_unit("test/funcA.c","test/funcA.o", includes);
-    compile_unit("test/funcB.c","test/funcB.o", includes);
-    compile_unit("test/funcC.c","test/funcC.o", includes);
-#endif
+    for( unsigned i = 1; i < argc-1; ++i )
+    {
+    job * j = new job;
+
+    j->input = argv[i];
+
+    //j->output = "out/";
+    j->output.append(j->input);
+    j->output.append(".1.o");
+
+    //j->inc
+
+    std::cout<<"queueing " << j->input << "->"<< j->output <<std::endl;
+    #if MULTITHREAD
+        Add_Job(std::bind(&compile_unit, j));
+    #else
+        compile_unit(j);
+    #endif
+    }
 
     std::unique_lock<std::mutex> lock(threadpool_mutex);
     terminate_pool = true; // use this flag in condition.wait
