@@ -109,7 +109,7 @@ int main(int argc, const char *argv[])
 
     std::vector<const char *> includes;
 
-    for( unsigned i = 1; i < argc-1; ++i )
+    for( unsigned i = 1; i < argc; ++i )
     {
     job * j = new job;
 
