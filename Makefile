@@ -1,14 +1,18 @@
+CPPFLAGS=-std=c++2a -pg -Og -g
+LINKFLAGS=-pg -Og -g -std=c++2a
+LINKLIBS=-ldl -ltcc -lpthread -lstdc++fs
+
 runtest: swarm
 	./$^
 
 main.o: main.cpp
-	g++ -c -g -pg -Og $^ -o $@
+	g++ -c $(CPPFLAGS) $^ -o $@
 
 pathcache.o: pathcache.cpp
-	g++ -c -g -pg -Og $^ -o $@
+	g++ -c $(CPPFLAGS) $^ -o $@
 
-swarm: main.o
-	g++ -g -pg -Og $^ -o $@ -ldl -ltcc -lpthread
+swarm: main.o pathcache.o
+	g++ $(LINKFLAGS) $^ -o $@ $(LINKLIBS)
 
 clean:
 	rm -f *.o swarm
